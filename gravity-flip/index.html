@@ -79,7 +79,7 @@ function resize() {
   H = canvas.height = window.innerHeight;
 }
 resize();
-window.addEventListener('resize', () => { resize(); if (state === 'dead') drawDead(); });
+window.addEventListener('resize', resize);
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const PLAYER_X     = 120;
@@ -123,13 +123,57 @@ function init() {
 
 // ── Stars ────────────────────────────────────────────────────────────────────
 stars = Array.from({ length: STAR_COUNT }, () => ({
-  x: Math.random() * 3000,
-  y: Math.random(),     // 0-1, relative to H
-  r: 0.5 + Math.random() * 1.5,
-  speed: 0.2 + Math.random() * 0.8,
+  x: Math.random() * 4000,
+  y: Math.random(),
+  r: 0.4 + Math.random() * 1.8,
+  speed: 0.15 + Math.random() * 0.7,
   alpha: 0.3 + Math.random() * 0.7,
+  twinkleSpeed: 0.5 + Math.random() * 2,
+  twinkleOffset: Math.random() * Math.PI * 2,
 }));
 let starOffset = 0;
+
+// ── Nebulae ───────────────────────────────────────────────────────────────────
+const NEBULA_COLORS = [260, 200, 320, 180, 30];
+const nebulae = Array.from({ length: 6 }, (_, i) => ({
+  x: Math.random() * 5000,
+  y: 0.1 + Math.random() * 0.8,
+  r: 120 + Math.random() * 200,
+  hue: NEBULA_COLORS[i % NEBULA_COLORS.length] + (Math.random()-0.5)*30,
+  alpha: 0.05 + Math.random() * 0.07,
+  speed: 0.03 + Math.random() * 0.06,
+}));
+
+// ── Planets ───────────────────────────────────────────────────────────────────
+const PLANET_TYPES = [
+  { hue:15,  sat:70, lit:42, hasRing:false, name:'mars'    },
+  { hue:200, sat:65, lit:48, hasRing:false, name:'neptune' },
+  { hue:35,  sat:80, lit:55, hasRing:true,  name:'saturn'  },
+  { hue:280, sat:55, lit:42, hasRing:false, name:'purple'  },
+  { hue:155, sat:60, lit:38, hasRing:false, name:'teal'    },
+  { hue:50,  sat:75, lit:52, hasRing:true,  name:'jupiter' },
+  { hue:0,   sat:0,  lit:75, hasRing:false, name:'moon'    },
+  { hue:220, sat:50, lit:35, hasRing:false, name:'ice'     },
+];
+const planets = Array.from({ length: 10 }, () => {
+  const t = PLANET_TYPES[Math.floor(Math.random() * PLANET_TYPES.length)];
+  return {
+    x:          Math.random() * 9000,
+    y:          0.18 + Math.random() * 0.64,
+    r:          18 + Math.random() * 52,
+    hue:        t.hue + (Math.random()-0.5)*15,
+    sat:        t.sat,
+    lit:        t.lit,
+    hasRing:    t.hasRing,
+    ringTilt:   0.15 + Math.random() * 0.35,
+    speed:      0.05 + Math.random() * 0.14,
+    hasMoon:    Math.random() < 0.35,
+    moonPhase:  Math.random() * Math.PI * 2,
+    moonDist:   1.7 + Math.random() * 0.7,
+    moonSize:   0.18 + Math.random() * 0.12,
+    stripes:    t.name === 'jupiter' || t.name === 'saturn',
+  };
+});
 
 // ── Best score ───────────────────────────────────────────────────────────────
 best = parseInt(localStorage.getItem('gfr_best') || '0');
@@ -137,8 +181,11 @@ document.getElementById('best-display').textContent = best;
 
 // ── Input ────────────────────────────────────────────────────────────────────
 function flip() {
-  if (state === 'menu') { state = 'playing'; init(); loop(performance.now()); return; }
-  if (state === 'dead') { state = 'playing'; init(); loop(performance.now()); return; }
+  if (state === 'menu' || state === 'dead') {
+    init();
+    state = 'playing';
+    return;
+  }
   if (state === 'playing') {
     gravDir = -gravDir;
     vy = FLIP_VEL * gravDir;
@@ -176,15 +223,24 @@ function spawnParticles(x, y, n, color) {
   }
 }
 
-// ── Main loop ────────────────────────────────────────────────────────────────
-function loop(ts) {
-  if (state !== 'playing') return;
-  dt = lastTime ? Math.min((ts - lastTime) / 16.67, 3) : 1;
-  lastTime = ts;
-
-  update();
-  draw();
-  requestAnimationFrame(loop);
+// ── Main loop (single loop, never stops) ─────────────────────────────────────
+function tick(ts) {
+  requestAnimationFrame(tick);
+  try {
+    if (state === 'playing') {
+      dt = lastTime ? Math.min((ts - lastTime) / 16.67, 3) : 1;
+      lastTime = ts;
+      update();
+      draw(ts);
+    } else if (state === 'menu') {
+      drawMenu(ts);
+    } else if (state === 'dead') {
+      draw(ts);
+      drawDeadOverlay(ts);
+    }
+  } catch(e) {
+    console.error('Game error:', e);
+  }
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -282,6 +338,7 @@ function rectsOverlap(ax,ay,aw,ah, bx,by,bw,bh) {
 // ── Die ───────────────────────────────────────────────────────────────────────
 function die() {
   state = 'dead';
+  drawDeadOverlay.startTs = null;
   shakeAmt = 18;
   spawnParticles(PLAYER_X + PLAYER_SIZE/2, playerY + PLAYER_SIZE/2, 40, '#FF4444');
   spawnParticles(PLAYER_X + PLAYER_SIZE/2, playerY + PLAYER_SIZE/2, 20, '#FFD700');
@@ -290,11 +347,10 @@ function die() {
     localStorage.setItem('gfr_best', best);
     document.getElementById('best-display').textContent = best;
   }
-  setTimeout(drawDead, 300);
 }
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
-function draw() {
+function draw(ts) {
   const sx = shakeAmt ? (Math.random()-0.5)*shakeAmt : 0;
   const sy = shakeAmt ? (Math.random()-0.5)*shakeAmt : 0;
 
@@ -308,7 +364,9 @@ function draw() {
   }
 
   drawBg();
-  drawStars();
+  drawNebulae(ts || 0);
+  drawStars(ts || 0);
+  drawPlanets();
   drawLanes();
   drawObstacles();
   drawPlayer();
@@ -319,20 +377,160 @@ function draw() {
 
 function drawBg() {
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, `hsl(${bgHue},60%,6%)`);
-  grad.addColorStop(1, `hsl(${bgHue+40},50%,12%)`);
+  grad.addColorStop(0,   `hsl(${bgHue},65%,4%)`);
+  grad.addColorStop(0.5, `hsl(${bgHue+20},55%,7%)`);
+  grad.addColorStop(1,   `hsl(${bgHue+45},50%,10%)`);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 }
 
-function drawStars() {
+function drawNebulae(ts) {
+  nebulae.forEach(n => {
+    const range = W * 3;
+    const x = ((n.x - starOffset * n.speed) % range + range) % range - W * 0.3;
+    const y = n.y * H;
+    if (x < -n.r * 2 || x > W + n.r * 2) return;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, n.r);
+    g.addColorStop(0,   `hsla(${n.hue},80%,65%,${n.alpha * 1.8})`);
+    g.addColorStop(0.4, `hsla(${n.hue+20},70%,50%,${n.alpha})`);
+    g.addColorStop(1,   `hsla(${n.hue},60%,40%,0)`);
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(x, y, n.r, n.r * 0.6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+function drawStars(ts) {
   stars.forEach(s => {
     const x = ((s.x - starOffset * s.speed) % W + W) % W;
     const y = s.y * H;
+    const twinkle = 0.5 + 0.5 * Math.sin(ts * 0.001 * s.twinkleSpeed + s.twinkleOffset);
+    const a = s.alpha * (0.6 + 0.4 * twinkle);
+    const r = s.r * (0.85 + 0.15 * twinkle);
     ctx.beginPath();
-    ctx.arc(x, y, s.r, 0, Math.PI*2);
-    ctx.fillStyle = `rgba(255,255,255,${s.alpha})`;
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
     ctx.fill();
+  });
+}
+
+function drawPlanets() {
+  planets.forEach(p => {
+    const range = W + p.r * 6;
+    const rawX = (p.x - starOffset * p.speed) % range;
+    const x = ((rawX % range) + range) % range - p.r * 2;
+    const y = p.y * H;
+    if (x < -p.r * 3 || x > W + p.r * 3) return;
+
+    ctx.save();
+
+    // Glow halo
+    ctx.shadowBlur  = p.r * 1.2;
+    ctx.shadowColor = `hsla(${p.hue},${p.sat}%,${p.lit + 20}%,0.25)`;
+
+    // Planet body — radial gradient for 3D sphere look
+    const grad = ctx.createRadialGradient(
+      x - p.r * 0.3, y - p.r * 0.35, p.r * 0.05,
+      x, y, p.r
+    );
+    grad.addColorStop(0,   `hsl(${p.hue},${p.sat}%,${p.lit + 28}%)`);
+    grad.addColorStop(0.45,`hsl(${p.hue},${p.sat}%,${p.lit}%)`);
+    grad.addColorStop(0.8, `hsl(${p.hue - 10},${p.sat - 10}%,${p.lit - 18}%)`);
+    grad.addColorStop(1,   `hsl(${p.hue - 15},${p.sat - 20}%,${p.lit - 30}%)`);
+    ctx.beginPath();
+    ctx.arc(x, y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Jupiter-style horizontal stripes
+    if (p.stripes) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, p.r, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.globalAlpha = 0.18;
+      for (let i = -3; i <= 3; i++) {
+        ctx.fillStyle = i % 2 === 0
+          ? `hsl(${p.hue + 30},60%,70%)`
+          : `hsl(${p.hue - 10},40%,25%)`;
+        ctx.fillRect(x - p.r, y + i * p.r * 0.3 - p.r * 0.15, p.r * 2, p.r * 0.3);
+      }
+      ctx.restore();
+    }
+
+    // Dark-side shadow overlay
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, p.r, 0, Math.PI * 2);
+    ctx.clip();
+    const shadow = ctx.createRadialGradient(
+      x + p.r * 0.5, y + p.r * 0.3, p.r * 0.3,
+      x + p.r * 0.6, y + p.r * 0.4, p.r * 1.1
+    );
+    shadow.addColorStop(0, 'transparent');
+    shadow.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = shadow;
+    ctx.fillRect(x - p.r, y - p.r, p.r * 2, p.r * 2);
+    ctx.restore();
+
+    // Saturn-style ring (drawn behind planet for back half, front for front half)
+    if (p.hasRing) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(1, p.ringTilt);
+      ctx.shadowBlur = 0;
+      // back half of ring (drawn first, behind planet)
+      ctx.strokeStyle = `hsla(${p.hue + 25},70%,${p.lit + 25}%,0.55)`;
+      ctx.lineWidth = p.r * 0.22;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.r * 1.65, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = `hsla(${p.hue + 15},60%,${p.lit + 15}%,0.3)`;
+      ctx.lineWidth = p.r * 0.1;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.r * 1.95, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // Draw planet again (to cover back ring)
+      ctx.beginPath();
+      ctx.arc(x, y, p.r - 1, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Front half of ring (over planet)
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(1, p.ringTilt);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = `hsla(${p.hue + 25},70%,${p.lit + 25}%,0.55)`;
+      ctx.lineWidth = p.r * 0.22;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.r * 1.65, 0, Math.PI);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Moon
+    if (p.hasMoon) {
+      const angle = p.moonPhase + starOffset * 0.0015;
+      const mx = x + Math.cos(angle) * p.r * p.moonDist;
+      const my = y + Math.sin(angle) * p.r * p.moonDist * 0.55;
+      const mr = p.r * p.moonSize;
+      ctx.shadowBlur = mr * 2; ctx.shadowColor = 'rgba(200,220,255,0.4)';
+      const mg = ctx.createRadialGradient(mx - mr*0.3, my - mr*0.3, mr*0.05, mx, my, mr);
+      mg.addColorStop(0, `hsl(${p.hue+40},25%,80%)`);
+      mg.addColorStop(1, `hsl(${p.hue+20},20%,45%)`);
+      ctx.beginPath();
+      ctx.arc(mx, my, mr, 0, Math.PI * 2);
+      ctx.fillStyle = mg;
+      ctx.fill();
+    }
+
+    ctx.restore();
   });
 }
 
@@ -467,7 +665,7 @@ function drawParticles() {
 }
 
 // ── Screens ──────────────────────────────────────────────────────────────────
-function drawMenu() {
+function drawMenu(ts) {
   // Animated background
   const grad = ctx.createLinearGradient(0, 0, 0, H);
   grad.addColorStop(0, '#050a1a');
@@ -475,13 +673,10 @@ function drawMenu() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
-  // Stars
-  stars.forEach(s => {
-    ctx.beginPath();
-    ctx.arc((s.x % W + W) % W, s.y * H, s.r, 0, Math.PI*2);
-    ctx.fillStyle = `rgba(255,255,255,${s.alpha})`;
-    ctx.fill();
-  });
+  starOffset += 0.4;  // slow drift on menu
+  drawNebulae(ts);
+  drawStars(ts);
+  drawPlanets();
 
   // Title
   ctx.save();
@@ -499,7 +694,7 @@ function drawMenu() {
   ctx.fillText('RUNNER', W/2, H/2 - 40);
 
   // Pulse prompt
-  const pulse = 0.7 + Math.sin(Date.now() * 0.003) * 0.3;
+  const pulse = 0.7 + Math.sin(ts * 0.003) * 0.3;
   ctx.globalAlpha = pulse;
   ctx.fillStyle = 'white';
   ctx.font = `bold ${Math.min(W*0.045, 26)}px Segoe UI`;
@@ -511,11 +706,12 @@ function drawMenu() {
   ctx.fillText('Avoid the spikes · Flip gravity to survive', W/2, H/2 + 75);
 
   ctx.restore();
-  requestAnimationFrame(() => { if (state === 'menu') drawMenu(); });
 }
 
-function drawDead() {
-  draw(); // draw current frame first
+function drawDeadOverlay(ts) {
+  // Delay overlay appearance slightly to let death particles show
+  if (!drawDeadOverlay.startTs) drawDeadOverlay.startTs = ts;
+  if (ts - drawDeadOverlay.startTs < 300) return;
 
   // Overlay
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
@@ -548,7 +744,7 @@ function drawDead() {
     ctx.fillText(`Best: ${best}`, W/2, H/2 + 28);
   }
 
-  const pulse = 0.7 + Math.sin(Date.now() * 0.004) * 0.3;
+  const pulse = 0.7 + Math.sin(ts * 0.004) * 0.3;
   ctx.globalAlpha = pulse;
   ctx.fillStyle = '#7DF9FF';
   ctx.font = `bold ${Math.min(W*0.04, 22)}px Segoe UI`;
@@ -559,7 +755,9 @@ function drawDead() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-drawMenu();
+// Boot — single loop, started once
+drawDeadOverlay.startTs = null;
+requestAnimationFrame(tick);
 </script>
 </body>
 </html>

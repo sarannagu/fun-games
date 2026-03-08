@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐾 Animal Word Scramble Adventure</title>
+<style>
+  :root {
+    --sky: #87CEEB;
+    --grass: #4CAF50;
+    --card: #fffbe6;
+    --accent: #FF6B35;
+    --purple: #7C4DFF;
+    --gold: #FFD700;
+    --easy: #4CAF50;
+    --medium: #FF9800;
+    --hard: #F44336;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(180deg, var(--sky) 0%, #e0f4ff 50%, #c8f0c8 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    overflow-x: hidden;
+  }
+
+  /* Floating clouds */
+  .clouds { position: fixed; top: 0; left: 0; width: 100%; pointer-events: none; z-index: 0; }
+  .cloud {
+    position: absolute;
+    background: white;
+    border-radius: 50px;
+    opacity: 0.8;
+    animation: drift linear infinite;
+  }
+  .cloud::before, .cloud::after {
+    content: '';
+    position: absolute;
+    background: white;
+    border-radius: 50%;
+  }
+  @keyframes drift {
+    from { transform: translateX(-200px); }
+    to { transform: translateX(110vw); }
+  }
+
+  h1 {
+    font-size: clamp(1.6rem, 5vw, 2.8rem);
+    color: #2c3e50;
+    text-shadow: 3px 3px 0 rgba(255,255,255,0.6);
+    margin-bottom: 6px;
+    z-index: 1;
+    text-align: center;
+  }
+  .subtitle { color: #555; font-size: 1rem; margin-bottom: 18px; z-index: 1; }
+
+  /* HUD */
+  .hud {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 16px;
+    z-index: 1;
+  }
+  .hud-box {
+    background: white;
+    border-radius: 16px;
+    padding: 8px 20px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hud-box .val { font-size: 1.4rem; color: var(--purple); }
+
+  /* Difficulty filter */
+  .filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 18px;
+    z-index: 1;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .filter-btn {
+    border: none;
+    border-radius: 20px;
+    padding: 6px 18px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    color: white;
+  }
+  .filter-btn:hover { transform: translateY(-2px); }
+  .filter-btn.all   { background: var(--purple); }
+  .filter-btn.easy  { background: var(--easy); }
+  .filter-btn.medium{ background: var(--medium); }
+  .filter-btn.hard  { background: var(--hard); }
+  .filter-btn.active { box-shadow: 0 0 0 3px white, 0 0 0 5px currentColor; }
+
+  /* Game card */
+  .game-card {
+    background: var(--card);
+    border-radius: 28px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    padding: 30px 24px 24px;
+    max-width: 540px;
+    width: 100%;
+    z-index: 1;
+    text-align: center;
+    position: relative;
+  }
+
+  .difficulty-badge {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: white;
+    padding: 3px 10px;
+    border-radius: 10px;
+  }
+
+  /* Animal emoji display */
+  .animal-display {
+    font-size: 7rem;
+    line-height: 1;
+    margin: 10px 0 6px;
+    transition: transform 0.3s;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.15));
+  }
+  .animal-display.hidden-animal { filter: grayscale(1) blur(6px) drop-shadow(0 4px 8px rgba(0,0,0,0.15)); }
+  .animal-display.revealed { animation: bounceIn 0.6s cubic-bezier(0.36,0.07,0.19,0.97); }
+
+  @keyframes bounceIn {
+    0%   { transform: scale(0.3) rotate(-10deg); opacity: 0; }
+    60%  { transform: scale(1.15) rotate(5deg); }
+    80%  { transform: scale(0.95); }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+
+  .hint-text {
+    font-size: 0.85rem;
+    color: #888;
+    margin-bottom: 14px;
+    min-height: 20px;
+  }
+
+  /* Answer zone — where placed letters go */
+  .answer-zone {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    min-height: 64px;
+    background: rgba(124,77,255,0.07);
+    border: 2.5px dashed var(--purple);
+    border-radius: 16px;
+    padding: 10px;
+    margin-bottom: 14px;
+  }
+  .answer-zone.correct { border-color: var(--easy); background: rgba(76,175,80,0.1); animation: pulse 0.4s ease; }
+  .answer-zone.wrong   { border-color: var(--hard); background: rgba(244,67,54,0.08); animation: shake 0.4s ease; }
+
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.03)} }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+
+  /* Letter tiles */
+  .tile {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    font-weight: 900;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.2);
+    border: none;
+    touch-action: manipulation;
+  }
+  .tile:active { transform: scale(0.92); box-shadow: 0 1px 0 rgba(0,0,0,0.2); }
+  .tile.src-tile {
+    background: linear-gradient(145deg, #fff9c4, #fff176);
+    color: #333;
+  }
+  .tile.src-tile:hover { transform: translateY(-3px); box-shadow: 0 7px 0 rgba(0,0,0,0.2); }
+  .tile.placed-tile {
+    background: linear-gradient(145deg, #ce93d8, #ab47bc);
+    color: white;
+  }
+  .tile.placed-tile:hover { transform: translateY(-3px); }
+
+  /* Scrambled letter bank */
+  .letter-bank {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    min-height: 60px;
+    margin-bottom: 18px;
+    padding: 8px;
+  }
+
+  /* Buttons */
+  .btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    border: none;
+    border-radius: 14px;
+    padding: 10px 22px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.25);
+  }
+  .btn:hover  { transform: translateY(-2px); box-shadow: 0 6px 0 rgba(0,0,0,0.2); }
+  .btn:active { transform: translateY(1px);  box-shadow: 0 2px 0 rgba(0,0,0,0.2); }
+  .btn-check  { background: var(--accent); color: white; }
+  .btn-clear  { background: #e0e0e0; color: #333; }
+  .btn-skip   { background: #90CAF9; color: #1a237e; }
+  .btn-hint   { background: var(--gold); color: #5d4037; }
+  .btn-next   { background: var(--grass); color: white; display: none; }
+
+  /* Progress bar */
+  .progress-wrap { width: 100%; background: #e0e0e0; border-radius: 20px; height: 10px; margin-top: 18px; overflow: hidden; }
+  .progress-bar  { height: 100%; border-radius: 20px; background: linear-gradient(90deg, #7C4DFF, #FF6B35); transition: width 0.5s ease; }
+
+  /* Win overlay */
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .overlay.show { display: flex; }
+  .overlay-box {
+    background: white;
+    border-radius: 28px;
+    padding: 40px 32px;
+    text-align: center;
+    max-width: 360px;
+    width: 90%;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.3);
+    animation: popIn 0.45s cubic-bezier(0.36,0.07,0.19,0.97);
+  }
+  @keyframes popIn { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
+  .overlay-box h2 { font-size: 2rem; margin-bottom: 10px; }
+  .overlay-box p  { color: #555; margin-bottom: 20px; font-size: 1.1rem; }
+  .big-emoji { font-size: 5rem; }
+
+  /* Confetti canvas */
+  #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 99; }
+
+  /* Timer color cue */
+  .timer-warn { color: #F44336 !important; animation: blink 1s step-start infinite; }
+  @keyframes blink { 50% { opacity: 0.4; } }
+
+  @media (max-width: 420px) {
+    .tile { width: 38px; height: 38px; font-size: 1.2rem; }
+    .animal-display { font-size: 5rem; }
+    .game-card { padding: 20px 14px 18px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Clouds -->
+<div class="clouds" id="clouds"></div>
+
+<canvas id="confetti"></canvas>
+
+<h1>🐾 Animal Word Scramble</h1>
+<p class="subtitle">Unscramble the animal name to reveal the creature!</p>
+
+<!-- HUD -->
+<div class="hud">
+  <div class="hud-box">⭐ Score <span class="val" id="score">0</span></div>
+  <div class="hud-box">🔥 Streak <span class="val" id="streak">0</span></div>
+  <div class="hud-box">⏱️ <span class="val" id="timer">60</span>s</div>
+  <div class="hud-box">📋 <span class="val" id="progress-txt">1/10</span></div>
+</div>
+
+<!-- Difficulty filter -->
+<div class="filters">
+  <button class="filter-btn all active"    onclick="setFilter('all')">All</button>
+  <button class="filter-btn easy"   onclick="setFilter('easy')">Easy</button>
+  <button class="filter-btn medium" onclick="setFilter('medium')">Medium</button>
+  <button class="filter-btn hard"   onclick="setFilter('hard')">Hard</button>
+</div>
+
+<!-- Main card -->
+<div class="game-card">
+  <div class="difficulty-badge" id="diff-badge">Easy</div>
+  <div class="animal-display hidden-animal" id="animal-emoji">🐶</div>
+  <div class="hint-text" id="hint-text">Tap a letter to place it →</div>
+
+  <div class="answer-zone" id="answer-zone"></div>
+  <div class="letter-bank"  id="letter-bank"></div>
+
+  <div class="btn-row">
+    <button class="btn btn-check" onclick="checkAnswer()">✅ Check</button>
+    <button class="btn btn-clear" onclick="clearAnswer()">🔄 Clear</button>
+    <button class="btn btn-hint"  onclick="giveHint()">💡 Hint</button>
+    <button class="btn btn-skip"  onclick="skipAnimal()">⏭️ Skip</button>
+    <button class="btn btn-next"  id="btn-next" onclick="nextAnimal()">Next ➡️</button>
+  </div>
+
+  <div class="progress-wrap"><div class="progress-bar" id="prog-bar" style="width:0%"></div></div>
+</div>
+
+<!-- Win overlay -->
+<div class="overlay" id="overlay">
+  <div class="overlay-box">
+    <div class="big-emoji" id="end-emoji">🏆</div>
+    <h2 id="end-title">Amazing!</h2>
+    <p id="end-msg">You finished all animals!</p>
+    <button class="btn btn-check" style="font-size:1.1rem;padding:14px 32px" onclick="restartGame()">🔁 Play Again</button>
+  </div>
+</div>
+
+<script>
+// ─── Animal data ────────────────────────────────────────────────────────────
+const ANIMALS = [
+  // Easy (4–5 letters)
+  { name:'CAT',      emoji:'🐱', hint:'A purring pet',         diff:'easy' },
+  { name:'DOG',      emoji:'🐶', hint:'Man\'s best friend',    diff:'easy' },
+  { name:'COW',      emoji:'🐄', hint:'Gives us milk',         diff:'easy' },
+  { name:'PIG',      emoji:'🐷', hint:'Oink oink!',            diff:'easy' },
+  { name:'HEN',      emoji:'🐔', hint:'Lays eggs',             diff:'easy' },
+  { name:'BEAR',     emoji:'🐻', hint:'Loves honey',           diff:'easy' },
+  { name:'DUCK',     emoji:'🦆', hint:'Quack quack',           diff:'easy' },
+  { name:'FROG',     emoji:'🐸', hint:'Hops on lily pads',     diff:'easy' },
+  { name:'FISH',     emoji:'🐟', hint:'Lives in water',        diff:'easy' },
+  { name:'CRAB',     emoji:'🦀', hint:'Has claws, walks sideways', diff:'easy' },
+  { name:'DEER',     emoji:'🦌', hint:'Has antlers',           diff:'easy' },
+  { name:'WOLF',     emoji:'🐺', hint:'Howls at the moon',     diff:'easy' },
+
+  // Medium (6–7 letters)
+  { name:'MONKEY',   emoji:'🐒', hint:'Loves bananas',         diff:'medium' },
+  { name:'RABBIT',   emoji:'🐰', hint:'Has long fluffy ears',  diff:'medium' },
+  { name:'PARROT',   emoji:'🦜', hint:'Can mimic your voice',  diff:'medium' },
+  { name:'TURTLE',   emoji:'🐢', hint:'Carries its home',      diff:'medium' },
+  { name:'JAGUAR',   emoji:'🐆', hint:'Spotted big cat',       diff:'medium' },
+  { name:'DONKEY',   emoji:'🫏', hint:'Hee-haw!',              diff:'medium' },
+  { name:'SALMON',   emoji:'🐟', hint:'Swims upstream',        diff:'medium' },
+  { name:'TOUCAN',   emoji:'🦜', hint:'Huge colorful beak',    diff:'medium' },
+  { name:'WALRUS',   emoji:'🦭', hint:'Has large tusks',       diff:'medium' },
+  { name:'BADGER',   emoji:'🦡', hint:'Black & white digger',  diff:'medium' },
+  { name:'FALCON',   emoji:'🦅', hint:'Fast hunting bird',     diff:'medium' },
+  { name:'LIZARD',   emoji:'🦎', hint:'Scales & long tail',    diff:'medium' },
+
+  // Hard (8+ letters)
+  { name:'ELEPHANT',   emoji:'🐘', hint:'Biggest land animal',     diff:'hard' },
+  { name:'KANGAROO',   emoji:'🦘', hint:'Hops with a baby pouch',  diff:'hard' },
+  { name:'CROCODILE',  emoji:'🐊', hint:'Snappy reptile',          diff:'hard' },
+  { name:'BUTTERFLY',  emoji:'🦋', hint:'Beautiful winged insect',  diff:'hard' },
+  { name:'PENGUIN',    emoji:'🐧', hint:'Tuxedo bird',             diff:'hard' },
+  { name:'DOLPHIN',    emoji:'🐬', hint:'Intelligent ocean mammal', diff:'hard' },
+  { name:'FLAMINGO',   emoji:'🦩', hint:'Pink one-legged bird',    diff:'hard' },
+  { name:'HEDGEHOG',   emoji:'🦔', hint:'Spiky little mammal',     diff:'hard' },
+  { name:'PLATYPUS',   emoji:'🦆', hint:'Duck-billed mammal',      diff:'hard' },
+  { name:'GORILLA',    emoji:'🦍', hint:'Largest primate',         diff:'hard' },
+];
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let pool        = [];
+let queue       = [];
+let current     = null;
+let srcLetters  = [];   // [{char, used}, ...]
+let placed      = [];   // indices into srcLetters
+let score       = 0;
+let streak      = 0;
+let hintsUsed   = 0;
+let timerSec    = 60;
+let timerHandle = null;
+let totalInRound= 10;
+let roundIdx    = 0;
+let activeFilter= 'all';
+
+// ─── Cloud generator ─────────────────────────────────────────────────────────
+function makeClouds() {
+  const wrap = document.getElementById('clouds');
+  for (let i = 0; i < 5; i++) {
+    const c = document.createElement('div');
+    const w = 80 + Math.random() * 120;
+    const h = w * 0.4;
+    const top = Math.random() * 25;
+    const dur = 25 + Math.random() * 30;
+    const delay = -Math.random() * dur;
+    c.className = 'cloud';
+    Object.assign(c.style, {
+      width: w+'px', height: h+'px',
+      top: top+'%', animationDuration: dur+'s', animationDelay: delay+'s'
+    });
+    const b1 = document.createElement('div');
+    Object.assign(b1.style, { width: h*1.2+'px', height: h*1.2+'px', top: -(h*0.4)+'px', left: w*0.15+'px' });
+    const b2 = document.createElement('div');
+    Object.assign(b2.style, { width: h+'px', height: h+'px', top: -(h*0.2)+'px', right: w*0.1+'px' });
+    c.append(b1, b2);
+    wrap.append(c);
+  }
+}
+
+// ─── Game init ───────────────────────────────────────────────────────────────
+function setFilter(f) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.filter-btn.'+f).classList.add('active');
+  restartGame();
+}
+
+function restartGame() {
+  document.getElementById('overlay').classList.remove('show');
+  pool = ANIMALS.filter(a => activeFilter === 'all' || a.diff === activeFilter);
+  if (!pool.length) pool = [...ANIMALS];
+  // Shuffle and pick 10
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  queue = shuffled.slice(0, Math.min(10, shuffled.length));
+  totalInRound = queue.length;
+  roundIdx = 0;
+  score = 0; streak = 0;
+  updateHUD();
+  loadAnimal(queue[roundIdx]);
+  startTimer();
+}
+
+function loadAnimal(animal) {
+  current   = animal;
+  hintsUsed = 0;
+  placed    = [];
+  srcLetters = scramble(animal.name).split('').map(c => ({ char: c, used: false }));
+
+  // Badge
+  const badge = document.getElementById('diff-badge');
+  badge.textContent = animal.diff.charAt(0).toUpperCase() + animal.diff.slice(1);
+  badge.style.background = animal.diff === 'easy' ? '#4CAF50' : animal.diff === 'medium' ? '#FF9800' : '#F44336';
+
+  // Emoji
+  const emojiEl = document.getElementById('animal-emoji');
+  emojiEl.textContent = animal.emoji;
+  emojiEl.className = 'animal-display hidden-animal';
+
+  document.getElementById('hint-text').textContent = 'Tap a letter to place it →';
+
+  renderBank();
+  renderAnswer();
+  setAnswerState('');
+
+  document.getElementById('btn-next').style.display = 'none';
+  document.querySelectorAll('.btn-check,.btn-clear,.btn-hint,.btn-skip')
+    .forEach(b => b.disabled = false);
+
+  updateProgress();
+}
+
+function scramble(word) {
+  const arr = word.split('');
+  let tries = 0;
+  do {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    tries++;
+  } while (arr.join('') === word && tries < 20);
+  return arr.join('');
+}
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+function renderBank() {
+  const bank = document.getElementById('letter-bank');
+  bank.innerHTML = '';
+  srcLetters.forEach((l, i) => {
+    if (l.used) return;
+    const tile = document.createElement('button');
+    tile.className = 'tile src-tile';
+    tile.textContent = l.char;
+    tile.dataset.idx = i;
+    tile.addEventListener('click', () => pickLetter(i));
+    bank.append(tile);
+  });
+}
+
+function renderAnswer() {
+  const zone = document.getElementById('answer-zone');
+  zone.innerHTML = '';
+  if (placed.length === 0) {
+    zone.innerHTML = '<span style="color:#bbb;align-self:center;font-size:0.9rem">Your answer appears here…</span>';
+    return;
+  }
+  placed.forEach((srcIdx, pi) => {
+    const tile = document.createElement('button');
+    tile.className = 'tile placed-tile';
+    tile.textContent = srcLetters[srcIdx].char;
+    tile.addEventListener('click', () => returnLetter(pi));
+    zone.append(tile);
+  });
+}
+
+function setAnswerState(state) {
+  const zone = document.getElementById('answer-zone');
+  zone.classList.remove('correct', 'wrong');
+  if (state) zone.classList.add(state);
+}
+
+// ─── Interactions ─────────────────────────────────────────────────────────────
+function pickLetter(idx) {
+  if (srcLetters[idx].used) return;
+  srcLetters[idx].used = true;
+  placed.push(idx);
+  renderBank();
+  renderAnswer();
+
+  // Auto-check when all letters placed
+  if (placed.length === current.name.length) {
+    setTimeout(checkAnswer, 200);
+  }
+}
+
+function returnLetter(pi) {
+  const srcIdx = placed[pi];
+  srcLetters[srcIdx].used = false;
+  placed.splice(pi, 1);
+  renderBank();
+  renderAnswer();
+  setAnswerState('');
+}
+
+function clearAnswer() {
+  placed.forEach(i => srcLetters[i].used = false);
+  placed = [];
+  renderBank();
+  renderAnswer();
+  setAnswerState('');
+}
+
+function checkAnswer() {
+  if (placed.length !== current.name.length) {
+    document.getElementById('hint-text').textContent = `Need all ${current.name.length} letters!`;
+    return;
+  }
+  const guess = placed.map(i => srcLetters[i].char).join('');
+  if (guess === current.name) {
+    handleCorrect();
+  } else {
+    handleWrong();
+  }
+}
+
+function handleCorrect() {
+  // Points: base 100 – penalty per hint + streak bonus
+  const pts = Math.max(10, 100 - hintsUsed * 20) + streak * 10;
+  score  += pts;
+  streak += 1;
+  updateHUD();
+
+  setAnswerState('correct');
+  document.getElementById('hint-text').textContent = `🎉 +${pts} pts! ${streak > 1 ? '🔥 x'+streak+' streak!' : ''}`;
+
+  const emojiEl = document.getElementById('animal-emoji');
+  emojiEl.className = 'animal-display revealed';
+
+  disableInputs();
+  launchConfetti();
+
+  if (roundIdx + 1 < totalInRound) {
+    document.getElementById('btn-next').style.display = 'inline-block';
+  } else {
+    setTimeout(endGame, 1500);
+  }
+}
+
+function handleWrong() {
+  streak = 0;
+  updateHUD();
+  setAnswerState('wrong');
+  document.getElementById('hint-text').textContent = '❌ Not quite — try again!';
+  setTimeout(() => setAnswerState(''), 600);
+}
+
+function giveHint() {
+  // Reveal next correct letter in answer
+  const correctArr = current.name.split('');
+  const currentArr = placed.map(i => srcLetters[i].char);
+
+  // Find first mismatch position
+  let pos = currentArr.length; // append position
+  for (let i = 0; i < correctArr.length; i++) {
+    if (currentArr[i] !== correctArr[i]) { pos = i; break; }
+  }
+  if (pos >= correctArr.length) return;
+
+  const neededChar = correctArr[pos];
+
+  // Remove any letters from pos onwards back to bank
+  while (placed.length > pos) {
+    const srcIdx = placed.pop();
+    srcLetters[srcIdx].used = false;
+  }
+
+  // Find that char in bank and place it
+  const srcIdx = srcLetters.findIndex((l, i) => l.char === neededChar && !l.used);
+  if (srcIdx !== -1) {
+    srcLetters[srcIdx].used = true;
+    placed.push(srcIdx);
+    hintsUsed++;
+    document.getElementById('hint-text').textContent = `💡 Hint: letter "${neededChar}" placed!`;
+  }
+
+  renderBank();
+  renderAnswer();
+
+  if (placed.length === current.name.length) setTimeout(checkAnswer, 300);
+}
+
+function skipAnimal() {
+  streak = 0;
+  updateHUD();
+  document.getElementById('hint-text').textContent = `The answer was: ${current.name}`;
+  const emojiEl = document.getElementById('animal-emoji');
+  emojiEl.className = 'animal-display revealed';
+  disableInputs();
+  if (roundIdx + 1 < totalInRound) {
+    document.getElementById('btn-next').style.display = 'inline-block';
+  } else {
+    setTimeout(endGame, 1500);
+  }
+}
+
+function nextAnimal() {
+  roundIdx++;
+  if (roundIdx >= totalInRound) { endGame(); return; }
+  loadAnimal(queue[roundIdx]);
+  document.getElementById('btn-next').style.display = 'none';
+}
+
+function disableInputs() {
+  document.querySelectorAll('.btn-check,.btn-clear,.btn-hint,.btn-skip')
+    .forEach(b => b.disabled = true);
+}
+
+// ─── Timer ────────────────────────────────────────────────────────────────────
+function startTimer() {
+  clearInterval(timerHandle);
+  timerSec = 60 + queue.length * 5; // a bit more time per animal
+  updateTimerDisplay();
+  timerHandle = setInterval(() => {
+    timerSec--;
+    updateTimerDisplay();
+    if (timerSec <= 0) { clearInterval(timerHandle); endGame(); }
+  }, 1000);
+}
+
+function updateTimerDisplay() {
+  const el = document.getElementById('timer');
+  el.textContent = timerSec;
+  el.className = timerSec <= 10 ? 'val timer-warn' : 'val';
+}
+
+// ─── HUD / Progress ──────────────────────────────────────────────────────────
+function updateHUD() {
+  document.getElementById('score').textContent  = score;
+  document.getElementById('streak').textContent = streak;
+}
+
+function updateProgress() {
+  const pct = (roundIdx / totalInRound) * 100;
+  document.getElementById('prog-bar').style.width = pct + '%';
+  document.getElementById('progress-txt').textContent = (roundIdx+1) + '/' + totalInRound;
+}
+
+// ─── End game ────────────────────────────────────────────────────────────────
+function endGame() {
+  clearInterval(timerHandle);
+  const overlay = document.getElementById('overlay');
+  const pct = score / (totalInRound * 100);
+  let emoji = '🌟', title = 'Nice try!', msg = '';
+  if (pct >= 0.85) { emoji = '🏆'; title = 'Animal Expert!'; }
+  else if (pct >= 0.6) { emoji = '🎉'; title = 'Great job!'; }
+  else if (pct >= 0.35) { emoji = '😊'; title = 'Good effort!'; }
+  else { emoji = '🌱'; title = 'Keep practicing!'; }
+  msg = `Final score: <strong>${score}</strong> pts across ${totalInRound} animals.`;
+
+  document.getElementById('end-emoji').textContent  = emoji;
+  document.getElementById('end-title').textContent  = title;
+  document.getElementById('end-msg').innerHTML      = msg;
+  overlay.classList.add('show');
+}
+
+// ─── Confetti ────────────────────────────────────────────────────────────────
+(function(){
+  const canvas  = document.getElementById('confetti');
+  const ctx     = canvas.getContext('2d');
+  let particles = [];
+  let animating = false;
+
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function Particle() {
+    this.x     = Math.random() * canvas.width;
+    this.y     = -20;
+    this.size  = 6 + Math.random() * 8;
+    this.color = `hsl(${Math.random()*360},90%,60%)`;
+    this.vx    = (Math.random() - 0.5) * 4;
+    this.vy    = 2 + Math.random() * 4;
+    this.angle = Math.random() * Math.PI * 2;
+    this.spin  = (Math.random() - 0.5) * 0.2;
+  }
+
+  function loop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach(p => {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size * 0.5);
+      ctx.restore();
+      p.x     += p.vx;
+      p.y     += p.vy;
+      p.angle += p.spin;
+      p.vy    += 0.1;
+    });
+    particles = particles.filter(p => p.y < canvas.height + 40);
+    if (particles.length) requestAnimationFrame(loop);
+    else animating = false;
+  }
+
+  window.launchConfetti = function() {
+    for (let i = 0; i < 80; i++) particles.push(new Particle());
+    if (!animating) { animating = true; loop(); }
+  };
+})();
+
+// ─── Boot ────────────────────────────────────────────────────────────────────
+makeClouds();
+restartGame();
+</script>
+</body>
+</html>
